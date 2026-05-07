@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>CS2 Tradeup Finder</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body{background:#0a1628;color:#e2e8f0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+  select,input[type=number]{background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:6px 10px;font-size:12px;width:100%}
+  select:focus,input:focus{outline:none;border-color:#7c3aed}
+  input[type=range]{accent-color:#7c3aed}
+  input[type=checkbox]{accent-color:#7c3aed;width:14px;height:14px}
+  .card-input{background:linear-gradient(160deg,#4a1a7a 0%,#2a0f4a 50%,#0e1530 100%)}
+  .card-profit{background:linear-gradient(160deg,#15803d 0%,#052e16 70%,#031509 100%)}
+  .card-loss{background:linear-gradient(160deg,#991b1b 0%,#450a0a 70%,#1a0404 100%)}
+  .pulse{animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  tr:hover td{background:rgba(124,58,237,0.06)}
+  ::-webkit-scrollbar{width:4px;height:4px}
+  ::-webkit-scrollbar-track{background:#0f172a}
+  ::-webkit-scrollbar-thumb{background:#334155;border-radius:2px}
+  .tab-active{background:#1e293b;color:white}
+  .tab{color:#64748b;cursor:pointer;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:500}
+  .tab:hover{color:#94a3b8}
+  .check-ok{color:#34d399}
+  .check-warn{color:#fbbf24}
+  .check-fail{color:#f87171}
+  .market-chip{padding:4px 10px;border-radius:20px;border:1px solid #334155;font-size:11px;cursor:pointer;transition:all .15s}
+  .market-chip.active{border-color:#7c3aed;background:rgba(124,58,237,0.2);color:#c4b5fd}
+</style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="loading-overlay" class="fixed inset-0 z-50 flex flex-col items-center justify-center" style="background:#0a1628">
+  <div class="text-2xl font-bold text-white mb-2">CS2 Tradeup Finder</div>
+  <p class="text-slate-400 text-sm mb-8">Fetching live prices from all markets…</p>
+  <div class="w-80 bg-slate-800 rounded-xl p-5">
+    <div class="flex justify-between text-xs text-slate-400 mb-2">
+      <span id="load-msg">Connecting…</span>
+      <span id="load-pct">0%</span>
+    </div>
+    <div class="h-1 bg-slate-700 rounded overflow-hidden mb-2">
+      <div id="load-bar" class="h-full transition-all" style="width:0%;background:linear-gradient(90deg,#7c3aed,#5b21b6)"></div>
+    </div>
+    <div id="load-sources" class="text-[10px] text-slate-500"></div>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app" class="hidden max-w-[1280px] mx-auto px-6 py-6">
+
+  <!-- Top nav tabs -->
+  <div class="flex items-center gap-2 mb-6">
+    <h1 class="text-2xl font-bold text-white mr-4">CS2 Tradeup</h1>
+    <div class="flex gap-1 bg-slate-900/50 rounded-lg p-1">
+      <div class="tab tab-active" id="tab-find" onclick="switchTab('find')">Find</div>
+      <div class="tab" id="tab-history" onclick="switchTab('history')">History</div>
+    </div>
+    <div class="flex-1"></div>
+    <div id="sources-badge" class="text-[10px] text-slate-500 text-right"></div>
+  </div>
+
+  <!-- ============ FIND TAB ============ -->
+  <div id="tab-find-content">
+
+    <!-- PHASE: FILTERS -->
+    <div id="phase-filters">
+      <p class="text-slate-400 text-sm mb-6 max-w-2xl">Configure filters then hit Find. Every result links directly to Steam Market and CSFloat so you can buy immediately after.</p>
+
+      <!-- Presets -->
+      <div class="mb-5">
+        <div class="text-[11px] text-slate-400 uppercase tracking-wider mb-2 font-semibold">Quick Presets</div>
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-2" id="presets-grid"></div>
+      </div>
+
+      <div class="bg-slate-900/40 border border-slate-800 rounded-xl p-6 space-y-5">
+
+        <!-- Rarity tiers -->
+        <div>
+          <div class="text-[11px] text-slate-400 uppercase tracking-wider mb-2 font-semibold">Rarity Tiers</div>
+          <div class="flex flex-wrap gap-1.5" id="rarity-buttons"></div>
+        </div>
+
+        <!-- Row 1 -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div>
+            <div class="text-[11px] text-slate-400 uppercase tracking-wider mb-2 font-semibold">StatTrak</div>
+            <div class="grid grid-cols-3 gap-1">
+              <button id="st-non"  onclick="setST('non-st')" class="py-2 rounded text-xs font-medium bg-slate-200 text-slate-900">Non</button>
+              <button id="st-st"   onclick="setST('st')"     class="py-2 rounded text-xs font-medium bg-slate-800 text-slate-400">ST</button>
+              <button id="st-both" onclick="setST('both')"   class="py-2 rounded text-xs font-medium bg-slate-800 text-slate-400">Both</button>
+            </div>
+          </div>
+          <div>
+            <div class="text-[11px] text-slate-400 uppercase tracking-wider mb-2 font-semibold">Optimize For</div>
+            <select id="optimize-select">
+              <option value="balanced">Balanced</option>
+              <option value="profit">% Profit</option>
+              <option value="safety">Profit Chance</option>
+              <option value="dollars">$ Profit</option>
+            </select>
+          </div>
+          <div>
+            <div class="text-[11px] text-slate-400 uppercase tracking-wider mb-2 font-semibold">Sell On</div>
+            <select id="sell-market">
+              <option value="steam">Steam Market (15% fee)</option>
+              <option value="csfloat">CSFloat (2% fee)</option>
+              <option value="skinport">Skinport (12% fee)</option>
+              <option value="waxpeer">Waxpeer (~2% fee)</option>
+            </select>
+          </div>
+          <div>
+            <div class="text-[11px] text-slate-400 uppercase tracking-wider mb-2 font-semibold">Search Time: <span id="duration-label" class="text-purple-300">30s</span></div>
+            <input type="range" min="10" max="55" step="5" value="30" id="duration-slider"
+              oninput="document.getElementById('duration-label').textContent=this.value+'s'" class="w-full mt-2"/>
+            <div class="flex justify-between text-[9px] text-slate-600 mt-1"><span>10s</span><span>30s</span><span>55s</span></div>
+          </div>
+        </div>
+
+        <!-- Markets you have access to -->
+        <div>
+          <div class="text-[11px] text-slate-400 uppercase tracking-wider mb-2 font-semibold">Markets you can buy from <span class="text-slate-600 normal-case font-normal">(only prices from these markets are used)</span></div>
+          <div class="flex flex-wrap gap-2" id="market-chips"></div>
+        </div>
+
+        <!-- Row 2 -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div>
+            <div class="text-[11px] text-slate-400 uppercase tracking-wider mb-2 font-semibold">Max Input Cost ($)</div>
+            <input type="number" id="max-cost" value="100"/>
+          </div>
+          <div>
+            <div class="text-[11px] text-slate-400 uppercase tracking-wider mb-2 font-semibold">Min Profit ($)</div>
+            <input type="number" id="min-profit" value="0"/>
+          </div>
+          <div>
+            <div class="text-[11px] text-slate-400 uppercase tracking-wider mb-2 font-semibold">Min Profit Chance (%)</div>
+            <input type="number" id="min-chance" value="0" min="0" max="100"/>
+          </div>
+          <div class="flex items-end">
+            <button onclick="startSearch()" id="find-btn"
+              class="w-full py-3 rounded-lg font-bold text-sm text-white transition-all"
+              style="background:linear-gradient(90deg,#7c3aed,#5b21b6);box-shadow:0 4px 20px rgba(124,58,237,0.35)">
+              ▶ Find Tradeups
+            </button>
+          </div>
+        </div>
+        <p id="find-error" class="text-red-400 text-xs hidden">Pick at least one rarity tier</p>
+      </div>
+    </div>
+
+    <!-- PHASE: SEARCHING -->
+    <div id="phase-search" class="hidden min-h-[60vh] flex flex-col items-center justify-center">
+      <div class="text-3xl font-bold text-white mb-2">Searching…</div>
+      <p class="text-slate-400 text-sm mb-6">Using the full search window with live prices. Best result updates below.</p>
+      <div class="w-full max-w-md bg-slate-900/40 border border-slate-800 rounded-xl p-6 mb-5">
+        <div class="grid grid-cols-3 gap-4 mb-4">
+          <div class="text-center">
+            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Scanned</div>
+            <div id="s-tried" class="text-white text-lg font-bold">0</div>
+          </div>
+          <div class="text-center">
+            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Found</div>
+            <div id="s-found" class="text-purple-300 text-lg font-bold">0</div>
+          </div>
+          <div class="text-center">
+            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Time</div>
+            <div id="s-elapsed" class="text-white text-lg font-bold">0s</div>
+          </div>
+        </div>
+        <div class="h-1 bg-slate-800 rounded overflow-hidden">
+          <div id="s-bar" class="h-full transition-all" style="width:0%;background:linear-gradient(90deg,#7c3aed,#5b21b6)"></div>
+        </div>
+      </div>
+      <!-- Live ticker -->
+      <div id="ticker" class="hidden w-full max-w-2xl bg-slate-900/40 border border-emerald-700/30 rounded-xl p-4">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 pulse"></span>
+          <span class="text-[10px] text-emerald-400 uppercase tracking-wider font-bold">Best So Far</span>
+        </div>
+        <div id="ticker-content" class="text-sm text-slate-300"></div>
+      </div>
+    </div>
+
+    <!-- PHASE: RESULTS -->
+    <div id="phase-results" class="hidden">
+      <div class="flex items-center gap-3 mb-5">
+        <span class="text-slate-400 text-sm" id="result-meta"></span>
+        <div class="flex-1"></div>
+        <div class="flex bg-slate-800/50 rounded p-0.5">
+          <button onclick="setView('detail')" id="view-detail" class="tab tab-active">Detail</button>
+          <button onclick="setView('table')"  id="view-table"  class="tab">Table</button>
+        </div>
+        <button onclick="resetToFilters()" class="text-xs text-slate-400 hover:text-white border border-slate-700 px-3 py-1.5 rounded">← Filters</button>
+      </div>
+
+      <!-- Detail view -->
+      <div id="view-detail-section">
+        <!-- Inputs -->
+        <div class="mb-2 flex items-center justify-between">
+          <h2 class="text-2xl font-bold text-white">Inputs <span class="text-slate-500 text-sm font-normal ml-2">Click any card to open on Steam Market · CSFloat</span></h2>
+          <div class="flex gap-2">
+            <button onclick="checkAvailability()" id="check-btn"
+              class="text-xs px-3 py-1.5 rounded border border-slate-600 text-slate-300 hover:border-purple-400 hover:text-purple-300 transition">
+              ⚡ Check Availability
+            </button>
+            <button onclick="refreshPrices()" id="refresh-btn"
+              class="text-xs px-3 py-1.5 rounded border border-slate-600 text-slate-300 hover:border-emerald-400 hover:text-emerald-300 transition">
+              ↻ Refresh Prices
+            </button>
+            <button onclick="saveToHistory()" 
+              class="text-xs px-3 py-1.5 rounded border border-slate-600 text-slate-300 hover:border-amber-400 hover:text-amber-300 transition">
+              ★ Save
+            </button>
+          </div>
+        </div>
+
+        <!-- Availability banner -->
+        <div id="avail-banner" class="hidden mb-3 rounded-lg p-3 border text-xs"></div>
+
+        <div id="inputs-grid" class="grid grid-cols-5 gap-3 mb-8"></div>
+
+        <!-- Buy checklist -->
+        <div id="buy-checklist-section" class="mb-8 hidden">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-sm font-bold text-white">Buy Checklist</h3>
+            <button onclick="copyChecklist()" class="text-[11px] text-slate-400 hover:text-white border border-slate-700 px-2 py-1 rounded">Copy</button>
+          </div>
+          <div id="buy-checklist" class="bg-slate-900/60 border border-slate-800 rounded-lg p-4 space-y-2 font-mono text-xs text-slate-300"></div>
+        </div>
+
+        <!-- Outcomes -->
+        <div class="flex items-end gap-4 mb-4 flex-wrap">
+          <h2 class="text-2xl font-bold text-white">Outcomes</h2>
+          <div id="stats-bar" class="flex flex-wrap items-center gap-x-5 gap-y-2 ml-auto"></div>
+        </div>
+        <div id="outcomes-grid" class="grid grid-cols-5 gap-3 mb-8"></div>
+
+        <!-- Result strip -->
+        <div>
+          <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-2" id="result-count"></div>
+          <div class="flex gap-1.5 overflow-x-auto pb-2" id="result-strip"></div>
+        </div>
+      </div>
+
+      <!-- Table view -->
+      <div id="view-table-section" class="hidden">
+        <div class="bg-slate-900/40 border border-slate-800 rounded-lg overflow-x-auto mb-2">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="bg-slate-900/60 text-slate-400 text-[10px] uppercase tracking-wider">
+                <th class="px-3 py-2 text-left">#</th>
+                <th class="px-3 py-2 text-left">Inputs</th>
+                <th class="px-3 py-2 text-left cursor-pointer hover:text-white" onclick="sortTable('inputCost')">Cost <span id="sort-inputCost"></span></th>
+                <th class="px-3 py-2 text-left cursor-pointer hover:text-white" onclick="sortTable('profitChance')">Profit Chance <span id="sort-profitChance"></span></th>
+                <th class="px-3 py-2 text-left cursor-pointer hover:text-white" onclick="sortTable('expectedProfit')">Avg Profit <span id="sort-expectedProfit">▼</span></th>
+                <th class="px-3 py-2 text-left cursor-pointer hover:text-white" onclick="sortTable('profitabilityRatio')">ROI <span id="sort-profitabilityRatio"></span></th>
+                <th class="px-3 py-2 text-left cursor-pointer hover:text-white" onclick="sortTable('maxProfit')">Max Profit <span id="sort-maxProfit"></span></th>
+                <th class="px-3 py-2 text-left cursor-pointer hover:text-white" onclick="sortTable('maxLoss')">Max Loss <span id="sort-maxLoss"></span></th>
+                <th class="px-3 py-2 text-left">Sell Via</th>
+              </tr>
+            </thead>
+            <tbody id="table-body"></tbody>
+          </table>
+        </div>
+        <p class="text-[10px] text-slate-500">Click any row to view full detail</p>
+      </div>
+
+      <!-- No results -->
+      <div id="no-results" class="hidden min-h-[50vh] flex flex-col items-center justify-center">
+        <div class="text-2xl font-bold text-white mb-2">No tradeups found</div>
+        <p class="text-slate-400 text-sm mb-4">Try widening filters: lower min profit, add rarity tiers, raise max cost.</p>
+        <button onclick="resetToFilters()" class="px-6 py-2 rounded text-sm font-bold text-white"
+          style="background:linear-gradient(90deg,#7c3aed,#5b21b6)">← Back to filters</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ HISTORY TAB ============ -->
+  <div id="tab-history-content" class="hidden">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-xl font-bold text-white">Saved Tradeups</h2>
+      <button onclick="loadHistoryTab()" class="text-xs text-slate-400 hover:text-white border border-slate-700 px-3 py-1.5 rounded">↻ Refresh</button>
+    </div>
+    <div id="history-list" class="space-y-3"></div>
+    <div id="history-empty" class="hidden text-center py-12 text-slate-500 text-sm">No saved tradeups yet. Run a search and click ★ Save on any result.</div>
+  </div>
+
+</div>
+
+<script>
+// ================================================================
+// CONSTANTS
+// ================================================================
+const RARITY_ORDER = ['Consumer','Industrial','Mil-Spec','Restricted','Classified','Covert'];
+const RARITY_COLORS = {
+  'Consumer':'#b0c3d9','Industrial':'#5e98d9','Mil-Spec':'#4b69ff',
+  'Restricted':'#8847ff','Classified':'#d32ce6','Covert':'#eb4b4b'
+};
+const WEAR_BANDS = [
+  {code:'FN',name:'Factory New',min:0,max:0.07},
+  {code:'MW',name:'Minimal Wear',min:0.07,max:0.15},
+  {code:'FT',name:'Field-Tested',min:0.15,max:0.38},
+  {code:'WW',name:'Well-Worn',min:0.38,max:0.45},
+  {code:'BS',name:'Battle-Scarred',min:0.45,max:1},
+];
+const SELL_FEES = { steam:0.15, csfloat:0.02, skinport:0.12, waxpeer:0.02 };
+const MARKETS = [
+  { id:'steam',      label:'Steam Market' },
+  { id:'csfloat',    label:'CSFloat' },
+  { id:'skinport',   label:'Skinport' },
+  { id:'waxpeer',    label:'Waxpeer' },
+  { id:'pricempire', label:'Pricempire (price check only)' },
+];
+const PRESETS = [
+  { label:'Safe under $20',       desc:'High chance, low cost',          f:{rarities:['Mil-Spec','Restricted'],statTrak:'non-st',maxCost:20,minProfit:0.5,minProfitChance:60,optimize:'safety',duration:30,sellMarket:'steam'}},
+  { label:'High risk / reward',   desc:'Classified → Covert swings',     f:{rarities:['Classified'],statTrak:'non-st',maxCost:200,minProfit:0,minProfitChance:0,optimize:'profit',duration:55,sellMarket:'csfloat'}},
+  { label:'Budget grinder',       desc:'Sub-$5, frequent small wins',    f:{rarities:['Mil-Spec'],statTrak:'non-st',maxCost:5,minProfit:0.10,minProfitChance:50,optimize:'balanced',duration:30,sellMarket:'steam'}},
+  { label:'StatTrak hunt',        desc:'ST only — higher margins',       f:{rarities:['Restricted','Classified'],statTrak:'st',maxCost:100,minProfit:1,minProfitChance:30,optimize:'profit',duration:55,sellMarket:'csfloat'}},
+  { label:'Big money',            desc:'Highest dollar profit',          f:{rarities:['Classified'],statTrak:'non-st',maxCost:500,minProfit:5,minProfitChance:30,optimize:'dollars',duration:55,sellMarket:'steam'}},
+  { label:'Anything profitable',  desc:'Wide balanced search',           f:{rarities:['Mil-Spec','Restricted','Classified'],statTrak:'non-st',maxCost:100,minProfit:0,minProfitChance:0,optimize:'balanced',duration:30,sellMarket:'steam'}},
+];
+
+// ================================================================
+// STATE
+// ================================================================
+let state = {
+  rarities:     ['Mil-Spec','Restricted','Classified'],
+  statTrak:     'non-st',
+  userMarkets:  ['steam','csfloat'],
+  results:      [],
+  selectedIdx:  0,
+  sortKey:      'expectedProfit',
+  sortDir:      'desc',
+  view:         'detail',
+  searchDuration: 30,
+  searchStart:  null,
+};
+
+// ================================================================
+// UTILS
+// ================================================================
+const fmt$  = (v) => (v>=0?'$':'-$') + Math.abs(v).toFixed(2);
+const fmtPct = (v) => v.toFixed(2) + '%';
+
+function wearForFloat(f) {
+  return WEAR_BANDS.find((w) => f >= w.min && f <= w.max) || WEAR_BANDS[2];
+}
+
+// ================================================================
+// INIT UI
+// ================================================================
+function buildRarityButtons() {
+  const el = document.getElementById('rarity-buttons');
+  el.innerHTML = '';
+  RARITY_ORDER.slice(0,-1).forEach(r => {
+    const btn = document.createElement('button');
+    btn.id = 'rarity-' + r.toLowerCase().replace(/[^a-z]/g,'');
+    btn.className = 'px-3 py-1.5 rounded border text-xs font-medium transition-all';
+    btn.textContent = r;
+    btn.onclick = () => toggleRarity(r);
+    el.appendChild(btn);
+  });
+  updateRarityButtons();
+}
+
+function updateRarityButtons() {
+  RARITY_ORDER.slice(0,-1).forEach(r => {
+    const btn = document.getElementById('rarity-' + r.toLowerCase().replace(/[^a-z]/g,''));
+    if (!btn) return;
+    const active = state.rarities.includes(r);
+    btn.style.borderColor = active ? RARITY_COLORS[r] : '#334155';
+    btn.style.background  = active ? RARITY_COLORS[r]+'22' : 'transparent';
+    btn.style.color       = active ? RARITY_COLORS[r] : '#94a3b8';
+  });
+}
+
+function toggleRarity(r) {
+  if (state.rarities.includes(r)) state.rarities = state.rarities.filter(x=>x!==r);
+  else state.rarities.push(r);
+  updateRarityButtons();
+}
+
+function setST(v) {
+  state.statTrak = v;
+  ['non-st','st','both'].forEach(s => {
+    const el = document.getElementById('st-'+s);
+    if (el) el.className = `py-2 rounded text-xs font-medium ${s===v?'bg-slate-200 text-slate-900':'bg-slate-800 text-slate-400 hover:bg-slate-700'}`;
+  });
+}
+
+function buildMarketChips() {
+  const el = document.getElementById('market-chips');
+  el.innerHTML = '';
+  MARKETS.forEach(m => {
+    const chip = document.createElement('button');
+    chip.id = 'chip-' + m.id;
+    chip.className = 'market-chip' + (state.userMarkets.includes(m.id) ? ' active' : '');
+    chip.textContent = m.label;
+    chip.onclick = () => toggleMarket(m.id);
+    el.appendChild(chip);
+  });
+}
+
+function toggleMarket(id) {
+  if (state.userMarkets.includes(id)) state.userMarkets = state.userMarkets.filter(x=>x!==id);
+  else state.userMarkets.push(id);
+  buildMarketChips();
+}
+
+function buildPresets() {
+  const grid = document.getElementById('presets-grid');
+  grid.innerHTML = '';
+  PRESETS.forEach(p => {
+    const btn = document.createElement('button');
+    btn.className = 'text-left p-3 rounded-lg border border-slate-800 bg-slate-900/40 hover:border-purple-500 transition-all';
+    btn.innerHTML = `<div class="text-xs font-bold text-white">${p.label}</div><div class="text-[10px] text-slate-400 mt-0.5">${p.desc}</div>`;
+    btn.onclick = () => applyPreset(p);
+    grid.appendChild(btn);
+  });
+}
+
+function applyPreset(p) {
+  const f = p.f;
+  state.rarities = [...f.rarities];
+  state.statTrak = f.statTrak;
+  setST(f.statTrak);
+  updateRarityButtons();
+  if (f.maxCost)          document.getElementById('max-cost').value = f.maxCost;
+  if (f.minProfit)        document.getElementById('min-profit').value = f.minProfit;
+  if (f.minProfitChance)  document.getElementById('min-chance').value = f.minProfitChance;
+  if (f.optimize)         document.getElementById('optimize-select').value = f.optimize;
+  if (f.sellMarket)       document.getElementById('sell-market').value = f.sellMarket;
+  if (f.duration) {
+    const sl = document.getElementById('duration-slider');
+    sl.value = Math.min(f.duration, 55);
+    document.getElementById('duration-label').textContent = sl.value + 's';
+  }
+}
+
+// ================================================================
+// LOADING POLL
+// ================================================================
+async function pollUntilReady() {
+  const overlay = document.getElementById('loading-overlay');
+  const appEl   = document.getElementById('app');
+  while (true) {
+    try {
+      const res  = await fetch('/api/status');
+      const data = await res.json();
+      document.getElementById('load-msg').textContent = data.message || 'Loading…';
+      if (data.total > 0) {
+        const pct = Math.round((data.loaded / data.total) * 100);
+        document.getElementById('load-pct').textContent = pct + '%';
+        document.getElementById('load-bar').style.width = pct + '%';
+      }
+      if (data.sources?.length) {
+        document.getElementById('load-sources').textContent = 'Sources: ' + data.sources.join(' · ');
+      }
+      if (data.status === 'ready') {
+        overlay.classList.add('hidden');
+        appEl.classList.remove('hidden');
+        document.getElementById('sources-badge').textContent = data.message;
+        return;
+      }
+      if (data.status === 'error') {
+        document.getElementById('load-msg').textContent = 'Error: ' + data.message;
+        document.getElementById('load-msg').style.color = '#f87171';
+        return;
+      }
+    } catch { document.getElementById('load-msg').textContent = 'Connecting…'; }
+    await new Promise(r => setTimeout(r, 1500));
+  }
+}
+
+// ================================================================
+// SEARCH
+// ================================================================
+async function startSearch() {
+  if (!state.rarities.length) {
+    document.getElementById('find-error').classList.remove('hidden');
+    return;
+  }
+  document.getElementById('find-error').classList.add('hidden');
+
+  const duration = parseInt(document.getElementById('duration-slider').value) || 30;
+  state.searchDuration = duration;
+  state.searchStart = Date.now();
+
+  showPhase('search');
+
+  // Elapsed timer
+  let elapsed = 0;
+  const timer = setInterval(() => {
+    elapsed = Math.floor((Date.now() - state.searchStart) / 1000);
+    document.getElementById('s-elapsed').textContent = elapsed + 's';
+    document.getElementById('s-bar').style.width = Math.min(100, (elapsed/duration)*100) + '%';
+  }, 500);
+
+  const body = {
+    rarities:        state.rarities,
+    statTrak:        state.statTrak,
+    maxCost:         parseFloat(document.getElementById('max-cost').value) || 100,
+    minProfit:       parseFloat(document.getElementById('min-profit').value) || 0,
+    minProfitChance: parseFloat(document.getElementById('min-chance').value) || 0,
+    optimizeFor:     document.getElementById('optimize-select').value,
+    sellMarket:      document.getElementById('sell-market').value,
+    userMarkets:     state.userMarkets,
+    duration,
+  };
+
+  try {
+    const res  = await fetch('/api/search', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const data = await res.json();
+    clearInterval(timer);
+    if (!res.ok || data.error) { alert('Search error: ' + (data.error||'unknown')); showPhase('filters'); return; }
+    state.results = data.results || [];
+    state.selectedIdx = 0;
+    showPhase('results');
+    renderResults();
+  } catch (e) {
+    clearInterval(timer);
+    alert('Network error: ' + e.message);
+    showPhase('filters');
+  }
+}
+
+// ================================================================
+// AVAILABILITY CHECK
+// ================================================================
+async function checkAvailability() {
+  const r = state.results[state.selectedIdx];
+  if (!r) return;
+  const btn = document.getElementById('check-btn');
+  btn.textContent = '⚡ Checking…';
+  btn.disabled = true;
+
+  // Group inputs by unique skin+wear
+  const groups = {};
+  r.inputs.forEach(inp => {
+    const key = inp.steamMarketName;
+    groups[key] = (groups[key] || { ...inp, quantity: 0 });
+    groups[key].quantity++;
+  });
+
+  const inputs = Object.values(groups).map(g => ({
+    steamMarketName: g.steamMarketName,
+    targetFloat: g.targetFloat,
+    quantity: g.quantity,
+  }));
+
+  try {
+    const res  = await fetch('/api/check-availability', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ inputs }) });
+    const data = await res.json();
+    renderAvailabilityBanner(data.checks, inputs);
+    renderBuyChecklist(r, data.checks, inputs);
+  } catch (e) {
+    showBanner('error', 'Availability check failed: ' + e.message);
+  }
+  btn.textContent = '⚡ Check Availability';
+  btn.disabled = false;
+}
+
+function renderAvailabilityBanner(checks, inputs) {
+  const banner = document.getElementById('avail-banner');
+  const allOk   = checks.every(c => c.available !== false);
+  const anyNull  = checks.some(c => c.available === null);
+  const warnings = checks.filter(c => c.warning).map(c => c.warning);
+
+  if (anyNull) {
+    showBanner('warn', '⚠ Could not verify some listings (CSFloat key may not be set). ' + (warnings[0] || ''));
+  } else if (allOk) {
+    showBanner('ok', `✓ All ${inputs.reduce((a,i)=>a+i.quantity,0)} inputs are available on CSFloat at or near target float.`);
+  } else {
+    showBanner('error', '✗ Availability issues: ' + warnings.join(' | '));
+  }
+}
+
+function showBanner(type, msg) {
+  const banner = document.getElementById('avail-banner');
+  banner.classList.remove('hidden');
+  const styles = {
+    ok:    'border-emerald-700/50 bg-emerald-900/20 text-emerald-300',
+    warn:  'border-amber-700/50 bg-amber-900/20 text-amber-300',
+    error: 'border-red-700/50 bg-red-900/20 text-red-300',
+  };
+  banner.className = `mb-3 rounded-lg p-3 border text-xs ${styles[type]}`;
+  banner.textContent = msg;
+}
+
+// ================================================================
+// BUY CHECKLIST
+// ================================================================
+function renderBuyChecklist(r, checks, groups) {
+  const section   = document.getElementById('buy-checklist-section');
+  const container = document.getElementById('buy-checklist');
+  section.classList.remove('hidden');
+  container.innerHTML = '';
+
+  // Group unique inputs
+  const inputGroups = {};
+  r.inputs.forEach(inp => {
+    const key = inp.steamMarketName;
+    inputGroups[key] = inputGroups[key] || { ...inp, quantity: 0 };
+    inputGroups[key].quantity++;
+  });
+
+  let total = 0;
+  Object.values(inputGroups).forEach((g, i) => {
+    const check = checks?.[i];
+    const statusIcon = check?.available === true ? '✓' : check?.available === false ? '✗' : '?';
+    const statusColor = check?.available === true ? '#34d399' : check?.available === false ? '#f87171' : '#fbbf24';
+    const line = document.createElement('div');
+    line.className = 'flex items-start gap-3';
+    const lineTotal = g.cost * g.quantity;
+    total += lineTotal;
+    line.innerHTML = `
+      <span style="color:${statusColor};min-width:12px">${statusIcon}</span>
+      <span class="flex-1">${g.quantity}× <strong class="text-white">${g.steamMarketName}</strong></span>
+      <span class="text-slate-400">~${fmt$(g.cost)} ea</span>
+      <span class="text-white font-bold">${fmt$(lineTotal)}</span>
+      <a href="${g.steamMarketUrl}" target="_blank" class="text-blue-400 hover:text-blue-300 ml-1">Steam</a>
+      <a href="${g.csfloatUrl}" target="_blank" class="text-purple-400 hover:text-purple-300 ml-1">CSFloat</a>
+    `;
+    container.appendChild(line);
+  });
+
+  const totalLine = document.createElement('div');
+  totalLine.className = 'border-t border-slate-700 pt-2 mt-2 flex justify-between font-bold';
+  totalLine.innerHTML = `<span class="text-slate-400">Total input cost</span><span class="text-white">${fmt$(total)}</span>`;
+  container.appendChild(totalLine);
+}
+
+function copyChecklist() {
+  const r = state.results[state.selectedIdx];
+  if (!r) return;
+  const inputGroups = {};
+  r.inputs.forEach(inp => {
+    inputGroups[inp.steamMarketName] = inputGroups[inp.steamMarketName] || { ...inp, quantity: 0 };
+    inputGroups[inp.steamMarketName].quantity++;
+  });
+  const lines = Object.values(inputGroups).map(g =>
+    `${g.quantity}× ${g.steamMarketName} (~${fmt$(g.cost)} each = ${fmt$(g.cost*g.quantity)}) → ${g.steamMarketUrl}`
+  );
+  lines.push('');
+  lines.push(`Total cost: ${fmt$(r.inputCost)}`);
+  lines.push(`Sell on: ${r.sellMarket} (${(r.sellFee*100).toFixed(0)}% fee)`);
+  lines.push(`Expected profit: ${(r.expectedProfit>=0?'+':'')}${fmt$(r.expectedProfit)}`);
+  lines.push(`Profit chance: ${fmtPct(r.profitChance*100)}`);
+  navigator.clipboard.writeText(lines.join('\n')).then(() => {
+    const btn = document.querySelector('[onclick="copyChecklist()"]');
+    if (btn) { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 1500); }
+  });
+}
+
+// ================================================================
+// PRICE REFRESH
+// ================================================================
+async function refreshPrices() {
+  const r = state.results[state.selectedIdx];
+  if (!r) return;
+  const btn = document.getElementById('refresh-btn');
+  btn.textContent = '↻ Refreshing…';
+  btn.disabled = true;
+
+  const skinsToRefresh = [...new Set(r.inputs.map(i => ({ fullName: i.fullName, wear: i.wear })))];
+  try {
+    const res  = await fetch('/api/refresh', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ skins: skinsToRefresh, userMarkets: state.userMarkets }),
+    });
+    const data = await res.json();
+
+    // Update costs in state
+    r.inputs.forEach(inp => {
+      const newPrice = data.prices[inp.steamMarketName];
+      if (newPrice) inp.cost = newPrice;
+    });
+    // Recalculate inputCost
+    r.inputCost = r.inputs.reduce((a, i) => a + i.cost, 0);
+
+    renderSelected();
+    showBanner('ok', `✓ Prices refreshed at ${new Date(data.refreshedAt).toLocaleTimeString()}`);
+  } catch (e) {
+    showBanner('error', 'Refresh failed: ' + e.message);
+  }
+  btn.textContent = '↻ Refresh Prices';
+  btn.disabled = false;
+}
+
+// ================================================================
+// HISTORY
+// ================================================================
+async function saveToHistory() {
+  const r = state.results[state.selectedIdx];
+  if (!r) return;
+  try {
+    await fetch('/api/history', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(r) });
+    showBanner('ok', '★ Saved to history');
+  } catch (e) {
+    showBanner('error', 'Save failed: ' + e.message);
+  }
+}
+
+async function loadHistoryTab() {
+  const list  = document.getElementById('history-list');
+  const empty = document.getElementById('history-empty');
+  list.innerHTML = '<p class="text-slate-500 text-xs">Loading…</p>';
+  try {
+    const res     = await fetch('/api/history');
+    const history = await res.json();
+    list.innerHTML = '';
+    if (!history.length) { empty.classList.remove('hidden'); return; }
+    empty.classList.add('hidden');
+    history.forEach((entry, idx) => {
+      const card = document.createElement('div');
+      card.className = 'bg-slate-900/40 border border-slate-800 rounded-lg p-4';
+      const profitable = entry.expectedProfit > 0;
+      const inputSummary = (() => {
+        const g = {};
+        entry.inputs.forEach(i => { g[i.id] = g[i.id] || { skin: i, count: 0 }; g[i.id].count++; });
+        return Object.values(g).map(x => `${x.count}× ${x.skin.weapon} ${x.skin.name}`).join(', ');
+      })();
+      card.innerHTML = `
+        <div class="flex items-start justify-between mb-2">
+          <div>
+            <div class="text-xs text-slate-500 mb-1">${new Date(entry.savedAt).toLocaleString()}</div>
+            <div class="text-sm font-bold text-white truncate max-w-lg">${inputSummary}</div>
+          </div>
+          <div class="flex gap-2 items-start ml-4">
+            <div class="text-right">
+              <div class="text-base font-bold ${profitable?'text-emerald-400':'text-red-400'}">${profitable?'+':''}${fmt$(entry.expectedProfit)}</div>
+              <div class="text-xs text-slate-400">${fmtPct(entry.profitChance*100)} chance</div>
+            </div>
+            <button onclick="deleteHistory(${idx})" class="text-slate-600 hover:text-red-400 text-xs px-2 py-1 border border-slate-700 rounded">✕</button>
+          </div>
+        </div>
+        <div class="text-[10px] text-slate-500">Cost ${fmt$(entry.inputCost)} · sell via ${entry.sellMarket} · max +${fmt$(entry.maxProfit)}</div>
+        <div class="mt-3 flex gap-2">
+          <button onclick="loadFromHistory(${idx})" class="text-xs px-3 py-1.5 rounded border border-purple-700 text-purple-300 hover:bg-purple-900/20">View Detail</button>
+        </div>
+      `;
+      list.appendChild(card);
+    });
+  } catch (e) {
+    list.innerHTML = `<p class="text-red-400 text-xs">Failed to load history: ${e.message}</p>`;
+  }
+}
+
+async function deleteHistory(idx) {
+  await fetch(`/api/history/${idx}`, { method: 'DELETE' });
+  loadHistoryTab();
+}
+
+async function loadFromHistory(idx) {
+  const res  = await fetch('/api/history');
+  const history = await res.json();
+  const entry = history[idx];
+  if (!entry) return;
+  state.results = [entry];
+  state.selectedIdx = 0;
+  switchTab('find');
+  showPhase('results');
+  renderResults();
+}
+
+// ================================================================
+// RENDER RESULTS
+// ================================================================
+function renderResults() {
+  const r = state.results;
+  document.getElementById('no-results').classList.toggle('hidden', r.length > 0);
+  document.getElementById('view-detail-section').classList.toggle('hidden', r.length === 0);
+  if (!r.length) return;
+  document.getElementById('result-meta').textContent = `${r.length} tradeups found`;
+  renderSelected();
+  renderStrip();
+  renderTable();
+}
+
+function renderSelected() {
+  const r = state.results[state.selectedIdx];
+  if (!r) return;
+  document.getElementById('avail-banner').classList.add('hidden');
+  document.getElementById('buy-checklist-section').classList.add('hidden');
+
+  // Inputs
+  document.getElementById('inputs-grid').innerHTML = r.inputs.map(s => inputCardHTML(s, r.isST)).join('');
+
+  // Stats bar
+  const profitable = r.expectedProfit > 0;
+  const feeLabel   = `Sell: ${r.sellMarket} (${((r.sellFee||0.15)*100).toFixed(0)}% fee)`;
+  document.getElementById('stats-bar').innerHTML = `
+    ${stat('AVG FLOAT', r.avgFloat.toFixed(5))}
+    ${stat('COST', fmt$(r.inputCost))}
+    ${stat('PROFIT CHANCE', fmtPct(r.profitChance*100), r.profitChance>0.5?'emerald':'amber')}
+    ${stat('AVG PROFIT', (profitable?'+':'')+fmt$(r.expectedProfit), profitable?'emerald':'red')}
+    ${stat('AVG RETURN', fmt$(r.expectedReturn))}
+    ${stat('MAX PROFIT', '+'+fmt$(r.maxProfit), 'emerald')}
+    ${stat('MAX LOSS', fmt$(r.maxLoss), 'red')}
+    <div style="font-size:10px;color:#64748b;align-self:flex-end;padding-bottom:2px">${feeLabel}</div>
+  `;
+
+  // Outcomes
+  document.getElementById('outcomes-grid').innerHTML = r.outcomes.slice(0,5).map((o,i) => outcomeCardHTML(o, r.inputCost, i===0 && o.netReturn>r.inputCost)).join('');
+}
+
+function stat(label, value, accent) {
+  const colors = {emerald:'#34d399',red:'#f87171',amber:'#fbbf24'};
+  return `<div>
+    <div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:2px">${label}</div>
+    <div style="font-weight:700;font-size:14px;color:${accent?colors[accent]:'white'}">${value}</div>
+  </div>`;
+}
+
+function inputCardHTML(skin, isST) {
+  const imgSrc = skin.imgUrl ? `/api/image?url=${encodeURIComponent(skin.imgUrl)}` : '';
+  const rc = RARITY_COLORS[skin.rarity] || '#fff';
+  return `
+  <div style="min-height:230px">
+    <a href="${skin.steamMarketUrl}" target="_blank" rel="noopener"
+       class="card-input rounded-lg overflow-hidden relative block mb-1"
+       style="min-height:215px;text-decoration:none;transition:box-shadow .15s"
+       onmouseover="this.style.boxShadow='0 0 0 2px #a78bfa'" onmouseout="this.style.boxShadow=''"
+       title="Open on Steam Market">
+      <div style="padding:10px 12px 4px;display:flex;justify-content:space-between">
+        <span style="font-size:11px;font-weight:600;color:#fbbf24">↘ ${fmt$(skin.cost)}</span>
+        <span style="font-size:10px;color:#cbd5e1">${skin.wear}</span>
+      </div>
+      <div style="padding:4px 8px;height:90px;display:flex;align-items:center;justify-content:center">
+        ${imgSrc?`<img src="${imgSrc}" alt="${skin.weapon}" style="max-height:90px;max-width:100%;object-fit:contain" onerror="this.style.display='none'"/>`:''}
+      </div>
+      <div style="padding:0 12px">
+        <div style="display:flex;align-items:flex-end;justify-content:space-between">
+          <div style="width:26px;height:26px;border-radius:50%;background:radial-gradient(circle,#d4a52a,#8a6f1c);display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:900;color:#0f172a">★</div>
+          <div style="height:2px;width:44px;border-radius:2px;background:linear-gradient(90deg,${rc},transparent)"></div>
+        </div>
+        <div style="margin-top:6px;color:white;font-size:13px;font-weight:700;line-height:1.2">${skin.weapon}</div>
+        <div style="color:#cbd5e1;font-size:11px;margin-bottom:6px">${skin.name}</div>
+        <div style="background:rgba(0,0,0,.3);border-radius:4px;padding:4px 8px;margin-bottom:4px">
+          <div style="font-size:9px;color:#94a3b8">Float value</div>
+          <div style="color:white;font-size:13px;font-family:monospace">${skin.targetFloat.toFixed(2)}</div>
+        </div>
+        <div style="font-size:10px;color:#94a3b8;padding-bottom:8px">⇋ ${skin.targetFloat.toFixed(8)}</div>
+      </div>
+      ${isST?`<div style="position:absolute;top:8px;right:36px;font-size:8px;color:#fb923c;font-weight:700">ST™</div>`:''}
+    </a>
+    <a href="${skin.csfloatUrl}" target="_blank" rel="noopener"
+       class="block text-center text-[10px] text-purple-400 hover:text-purple-300 border border-slate-700 hover:border-purple-500 rounded py-0.5 transition">
+      View on CSFloat
+    </a>
+  </div>`;
+}
+
+function outcomeCardHTML(o, inputCost, isBest) {
+  const profit = o.netReturn - inputCost;
+  const profitable = profit >= 0;
+  const bg = profitable
+    ? 'linear-gradient(160deg,#15803d 0%,#052e16 70%,#031509 100%)'
+    : 'linear-gradient(160deg,#991b1b 0%,#450a0a 70%,#1a0404 100%)';
+  const rc = RARITY_COLORS[o.rarity] || '#fff';
+  const imgSrc = o.imgUrl ? `/api/image?url=${encodeURIComponent(o.imgUrl)}` : '';
+  return `
+  <a href="${o.steamMarketUrl}" target="_blank" rel="noopener"
+     class="rounded-lg overflow-hidden relative block"
+     style="background:${bg};min-height:210px;text-decoration:none;transition:box-shadow .15s"
+     onmouseover="this.style.boxShadow='0 0 0 2px #34d399'" onmouseout="this.style.boxShadow=''">
+    <div style="padding:10px 12px 4px;display:flex;justify-content:space-between">
+      <span style="font-size:11px;font-weight:700;color:white">${fmtPct(o.probability*100)}</span>
+      <span style="font-size:11px;font-weight:700;color:${profitable?'#6ee7b7':'#fca5a5'}">${profit>=0?'+':''}${fmt$(profit)}</span>
+    </div>
+    ${isBest?`<div style="padding:2px 12px"><span style="font-size:9px;font-weight:900;color:white;letter-spacing:.1em">BEST</span></div>`:''}
+    <div style="padding:4px 8px;height:76px;display:flex;align-items:center;justify-content:center">
+      ${imgSrc?`<img src="${imgSrc}" alt="${o.weapon}" style="max-height:76px;max-width:100%;object-fit:contain" onerror="this.style.display='none'"/>`:''}
+    </div>
+    <div style="padding:0 12px 12px">
+      <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:4px">
+        <div style="width:22px;height:22px;border-radius:50%;background:radial-gradient(circle,#d4a52a,#8a6f1c);display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:900;color:#0f172a">★</div>
+        <div style="height:2px;width:44px;border-radius:2px;background:linear-gradient(90deg,${rc},transparent)"></div>
+      </div>
+      <div style="color:white;font-size:12px;font-weight:700;line-height:1.2;margin-top:4px">${o.weapon}</div>
+      <div style="color:#e2e8f0;font-size:11px">${o.name}</div>
+      <div style="font-size:10px;color:#cbd5e1;margin-top:4px;font-family:monospace">${o.wear} ${o.outputFloat.toFixed(8)}</div>
+      <div style="margin-top:6px;background:rgba(0,0,0,.3);border-radius:4px;padding:5px 8px;text-align:center">
+        <span style="color:white;font-size:13px;font-weight:700">${fmt$(o.outputPrice)}</span>
+      </div>
+    </div>
+  </a>`;
+}
+
+function renderStrip() {
+  const strip = document.getElementById('result-strip');
+  strip.innerHTML = '';
+  document.getElementById('result-count').textContent = state.results.length + ' tradeups · pick another';
+  state.results.forEach((r,i) => {
+    const profitable = r.expectedProfit > 0;
+    const isSel = i === state.selectedIdx;
+    const btn = document.createElement('button');
+    btn.style.cssText = `text-align:left;border-radius:6px;padding:8px 12px;border:1px solid ${isSel?'#a78bfa':'#1e293b'};background:${isSel?'#1e1b4b':'#0f172a'};white-space:nowrap;flex-shrink:0;cursor:pointer`;
+    btn.innerHTML = `
+      <div style="font-size:10px;color:#64748b">#${i+1}</div>
+      <div style="font-size:12px;font-weight:700;color:${profitable?'#34d399':'#f87171'}">${profitable?'+':''}${fmt$(r.expectedProfit)}</div>
+      <div style="font-size:10px;color:#94a3b8">${fmtPct(r.profitChance*100)}</div>
+    `;
+    btn.onclick = () => { state.selectedIdx = i; renderSelected(); renderStrip(); };
+    strip.appendChild(btn);
+  });
+}
+
+function renderTable() {
+  const body = document.getElementById('table-body');
+  const sorted = [...state.results].sort((a,b) => {
+    const av = a[state.sortKey], bv = b[state.sortKey];
+    return state.sortDir === 'asc' ? av-bv : bv-av;
+  });
+  body.innerHTML = '';
+  sorted.forEach((r,i) => {
+    const origIdx = state.results.indexOf(r);
+    const profitable = r.expectedProfit > 0;
+    const inputSummary = (() => {
+      const g = {};
+      r.inputs.forEach(inp => { g[inp.id] = g[inp.id]||{skin:inp,count:0}; g[inp.id].count++; });
+      return Object.values(g).map(x=>`${x.count}× ${x.skin.weapon} ${x.skin.name}`).join(', ');
+    })();
+    const tr = document.createElement('tr');
+    tr.style.cssText = `border-top:1px solid #1e293b;cursor:pointer;${origIdx===state.selectedIdx?'background:rgba(124,58,237,0.1)':''}`;
+    tr.onclick = () => { state.selectedIdx = origIdx; renderSelected(); renderStrip(); setView('detail'); };
+    tr.innerHTML = `
+      <td class="px-3 py-2 text-slate-500">${i+1}</td>
+      <td class="px-3 py-2 text-slate-300" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${inputSummary}">${inputSummary}${r.isST?'<span style="font-size:9px;color:#fb923c;margin-left:4px">ST</span>':''}</td>
+      <td class="px-3 py-2 text-white font-mono">${fmt$(r.inputCost)}</td>
+      <td class="px-3 py-2 font-mono" style="color:${r.profitChance>0.5?'#34d399':'#fbbf24'}">${fmtPct(r.profitChance*100)}</td>
+      <td class="px-3 py-2 font-mono font-bold" style="color:${profitable?'#34d399':'#f87171'}">${profitable?'+':''}${fmt$(r.expectedProfit)}</td>
+      <td class="px-3 py-2 font-mono text-slate-300">${fmtPct((r.profitabilityRatio-1)*100)}</td>
+      <td class="px-3 py-2 font-mono text-emerald-400">+${fmt$(r.maxProfit)}</td>
+      <td class="px-3 py-2 font-mono text-red-400">${fmt$(r.maxLoss)}</td>
+      <td class="px-3 py-2 text-slate-400 text-[10px]">${r.sellMarket||'steam'}</td>
+    `;
+    body.appendChild(tr);
+  });
+}
+
+function sortTable(key) {
+  if (state.sortKey === key) state.sortDir = state.sortDir==='asc'?'desc':'asc';
+  else { state.sortKey = key; state.sortDir = 'desc'; }
+  ['inputCost','profitChance','expectedProfit','profitabilityRatio','maxProfit','maxLoss'].forEach(k => {
+    const el = document.getElementById('sort-'+k);
+    if (el) el.textContent = k===state.sortKey?(state.sortDir==='asc'?'▲':'▼'):'';
+  });
+  renderTable();
+}
+
+// ================================================================
+// VIEW / PHASE / TAB
+// ================================================================
+function showPhase(p) {
+  ['filters','search','results'].forEach(ph => {
+    const el = document.getElementById('phase-'+ph);
+    if (el) el.classList.toggle('hidden', ph!==p);
+  });
+}
+
+function setView(v) {
+  state.view = v;
+  document.getElementById('view-detail-section').classList.toggle('hidden', v!=='detail');
+  document.getElementById('view-table-section').classList.toggle('hidden',  v!=='table');
+  document.getElementById('view-detail').className = 'tab ' + (v==='detail'?'tab-active':'');
+  document.getElementById('view-table').className  = 'tab ' + (v==='table'?'tab-active':'');
+}
+
+function resetToFilters() {
+  state.results = [];
+  state.selectedIdx = 0;
+  showPhase('filters');
+}
+
+function switchTab(tab) {
+  ['find','history'].forEach(t => {
+    document.getElementById('tab-'+t+'-content').classList.toggle('hidden', t!==tab);
+    document.getElementById('tab-'+t).className = 'tab ' + (t===tab?'tab-active':'');
+  });
+  if (tab === 'history') loadHistoryTab();
+}
+
+// ================================================================
+// BOOT
+// ================================================================
+buildRarityButtons();
+buildMarketChips();
+buildPresets();
+pollUntilReady();
+</script>
+</body>
+</html>
